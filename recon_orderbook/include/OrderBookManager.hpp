@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <iostream>
+#include <fstream>
 #include "MBOParsed.hpp"
 #include "Order.hpp"
 #include <book/depth_order_book.h>
@@ -36,6 +37,9 @@ private:
     std::string current_symbol_;
     uint32_t current_sequence_;
     
+    // File stream for JSON output
+    std::ofstream json_file_;
+    
 public:
     OrderBookManager();
     ~OrderBookManager();
@@ -43,8 +47,11 @@ public:
     // Main entry point for processing MBO messages
     void processMessage(const MBOParsed& msg);
     
-    // Print current book state as JSON to terminal
+    // Print current book state as JSON to terminal and file
     void printBookStateJSON();
+    
+    // Initialize JSON file output
+    void initializeJSONFile(const std::string& filename);
     
 private:
     // Action handlers

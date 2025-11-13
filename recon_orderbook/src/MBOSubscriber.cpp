@@ -54,6 +54,8 @@ MBOSubscriber::MBOSubscriber()
 {
     type.reset(new StringType());
     orderbook_mgr_ = std::make_unique<OrderBookManager>();
+    // Initialize JSON file output
+    orderbook_mgr_->initializeJSONFile("orderbook_snapshots.json");
 }
 
 MBOSubscriber::~MBOSubscriber() {

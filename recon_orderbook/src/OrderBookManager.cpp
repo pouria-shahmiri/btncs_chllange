@@ -20,6 +20,11 @@ OrderBookManager::~OrderBookManager() {
     }
     order_map_.clear();
     
+    // Close JSON file if open
+    if (json_file_.is_open()) {
+        json_file_.close();
+    }
+    
     delete orderbook_;
 }
 
@@ -162,6 +167,16 @@ uint64_t OrderBookManager::convertPrice(double price) {
     return static_cast<uint64_t>(price * 100.0);
 }
 
+void OrderBookManager::initializeJSONFile(const std::string& filename) {
+    if (json_file_.is_open()) {
+        json_file_.close();
+    }
+    json_file_.open(filename, std::ios::out | std::ios::trunc);
+    if (!json_file_.is_open()) {
+        std::cerr << "Error opening JSON file: " << filename << std::endl;
+    }
+}
+
 void OrderBookManager::printBookStateJSON() {
     const book::DepthOrderBook<Order*>* depth_book = 
         dynamic_cast<const book::DepthOrderBook<Order*>*>(orderbook_);
@@ -280,5 +295,12 @@ void OrderBookManager::printBookStateJSON() {
     json_output << "  ]\n";
     json_output << "}\n";
     
+    // Print to console
     std::cout << json_output.str();
+    
+    // Write to file if open
+    if (json_file_.is_open()) {
+        json_file_ << json_output.str();
+        json_file_.flush();
+    }
 }
