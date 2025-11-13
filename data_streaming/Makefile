@@ -1,0 +1,38 @@
+# Compiler and flags
+CXX = g++
+CXXFLAGS = -Wall -std=c++17 -Iinclude -pthread
+
+# FastRTPS and FastCDR libraries (Ubuntu package names)
+# Note: libfastdds is not available, use libfastrtps instead
+LIBS = -lfastrtps -lfastcdr
+
+# Directories
+BUILD_DIR = build
+SRC_DIR   = src
+
+# Target executable
+TARGET = $(BUILD_DIR)/data_streaming
+
+# Source files
+SRC = $(SRC_DIR)/main.cpp $(SRC_DIR)/MBOPublisher.cpp
+
+# Default target
+all: $(BUILD_DIR) $(TARGET)
+
+# Create build directory
+$(BUILD_DIR):
+	mkdir -p $(BUILD_DIR)
+
+# Build the executable
+$(TARGET): $(BUILD_DIR) $(SRC)
+	$(CXX) $(CXXFLAGS) $(SRC) -o $(TARGET) $(LIBS)
+
+# Run the program
+run: $(TARGET)
+	./$(TARGET)
+
+# Clean build
+clean:
+	rm -rf $(BUILD_DIR)
+
+.PHONY: all run clean

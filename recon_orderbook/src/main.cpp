@@ -1,38 +1,24 @@
-#include "orderbook_subscriber.h"
 #include <iostream>
-#include <signal.h>
-
-OrderbookSubscriber* g_subscriber = nullptr;
-
-void signalHandler(int signum) {
-    std::cout << "\n\nReceived interrupt signal (" << signum << ")" << std::endl;
-    if (g_subscriber) {
-        g_subscriber->shutdown();
-    }
-    exit(signum);
-}
+#include "MBOSubscriber.hpp"
 
 int main() {
-    // Set up signal handler for graceful shutdown
-    signal(SIGINT, signalHandler);
-    signal(SIGTERM, signalHandler);
+    std::cout << "=== MBO Order Book Subscriber ===" << std::endl;
     
-    std::cout << "\n╔════════════════════════════════════════════════╗" << std::endl;
-    std::cout << "║     Recon Orderbook - Market Data Subscriber    ║" << std::endl;
-    std::cout << "╚════════════════════════════════════════════════╝\n" << std::endl;
+    MBOSubscriber subscriber;
     
-    OrderbookSubscriber subscriber;
-    g_subscriber = &subscriber;
-    
-    // Initialize the subscriber
-    if (!subscriber.initialize()) {
+    if (!subscriber.init()) {
         std::cerr << "Failed to initialize subscriber" << std::endl;
         return 1;
     }
     
-    // Start listening for data
-    subscriber.listen();
+    std::cout << "Subscriber ready. Listening for MBO data..." << std::endl;
     
-    std::cout << "\nApplication terminated." << std::endl;
+    try {
+        subscriber.run();
+    } catch (const std::exception& e) {
+        std::cerr << "Error: " << e.what() << std::endl;
+        return 1;
+    }
+    
     return 0;
 }

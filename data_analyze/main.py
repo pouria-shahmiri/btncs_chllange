@@ -1,5 +1,5 @@
 # ========================================
-# Databento DBN Reader & Analyzer (no plots)
+# Databento DBN Reader → CSV Export
 # ========================================
 import databento as db
 import pandas as pd
@@ -12,19 +12,21 @@ store = db.DBNStore.from_file(DBN_PATH)
 # --- 2. Convert to pandas DataFrame ---
 df = store.to_df()
 
-# --- 3. Basic info ---
-print("✅ File loaded successfully!")
+print("✅ DBN file loaded successfully!")
 print(f"Number of records: {len(df)}")
 print("Columns:", df.columns.tolist())
-# MODIFICATION: Use to_string() to display the first 5 rows completely
-print(df.head(5).to_string())  # preview
-# Original line: print(df.head(10)) 
+print(df.head(5).to_string())  # preview first 5 rows
 
-# --- 4. Clean and sort ---
+# --- 3. Sort by ts_event and add datetime column ---
 df = df.sort_values(by="ts_event")
-df["datetime"] = pd.to_datetime(df["ts_event"], unit="ns")
+df["datetime"] = pd.to_datetime(df["ts_event"], unit="ns", utc=True)
 
-# --- 5. Example analysis: total volume per price & side ---
+# --- 4. Save full cleaned DataFrame to CSV ---
+CSV_OUTPUT_PATH = "orderbook_clean.csv"
+df.to_csv(CSV_OUTPUT_PATH, index=False)
+print(f"✅ Saved full cleaned data to {CSV_OUTPUT_PATH}")
+
+# --- 5. Optional: create summary per side & price ---
 summary = (
     df.groupby(["side", "price"])["size"]
     .sum()
@@ -32,28 +34,25 @@ summary = (
     .sort_values(by="price", ascending=False)
 )
 
-print("\nTop 10 price levels by total size:")
-print(summary.head(10))
+summary_csv_path = "orderbook_summary.csv"
+summary.to_csv(summary_csv_path, index=False)
+print(f"✅ Saved summary to {summary_csv_path}")
 
-# --- 6. Save cleaned data for future processing ---
-df.to_parquet("orderbook_clean.parquet")
-summary.to_csv("orderbook_summary.csv", index=False)
-
-print("- orderbook_summary.csv")
-
-
+# --- 6. Print some statistics ---
 num_symbols = df["symbol"].nunique()
 print(f"Number of unique symbols: {num_symbols}")
-
 print("Symbols in file:", df["symbol"].unique())
 
-
-# --- Price stats ---
 min_price = df["price"].min()
 max_price = df["price"].max()
 mean_price = df["price"].mean()
-
 print(f"\nPrice statistics:")
 print(f"Minimum price: {min_price}")
 print(f"Maximum price: {max_price}")
 print(f"Mean price: {mean_price:.2f}")
+
+# --- 7. Show dtypes and first record transposed ---
+print("\nData types of columns:")
+print(df.dtypes)
+print("\nFirst record (transposed):")
+print(df.head(1).T)
