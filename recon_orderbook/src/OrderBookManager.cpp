@@ -1,13 +1,16 @@
 #include "OrderBookManager.hpp"
 #include <iostream>
 #include <iomanip>
+#include <sstream>
+#include <vector>
+#include <set>
+#include <algorithm>
 
 using namespace liquibook;
 
-OrderBookManager::OrderBookManager() {
+OrderBookManager::OrderBookManager() : current_sequence_(0) {
     // Create Liquibook depth order book
     orderbook_ = new book::DepthOrderBook<Order*>();
-    std::cout << "OrderBookManager initialized" << std::endl;
 }
 
 OrderBookManager::~OrderBookManager() {
@@ -21,6 +24,9 @@ OrderBookManager::~OrderBookManager() {
 }
 
 void OrderBookManager::processMessage(const MBOParsed& msg) {
+    current_symbol_ = msg.symbol;
+    current_sequence_ = msg.sequence;
+    
     switch (msg.action) {
         case 'A':
             handleAdd(msg);
@@ -36,23 +42,25 @@ void OrderBookManager::processMessage(const MBOParsed& msg) {
             handleTrade(msg);
             break;
         default:
-            std::cerr << "Unknown action: " << msg.action << std::endl;
+            break;
     }
+    
+    // Print JSON after every message
+    printBookStateJSON();
 }
 
 void OrderBookManager::handleAdd(const MBOParsed& msg) {
     // Check for duplicate
     if (order_map_.find(msg.order_id) != order_map_.end()) {
-        std::cerr << "Duplicate add for order_id: " << msg.order_id << std::endl;
         return;
     }
     
-    // Create Liquibook order
+    // Create Liquibook order with metadata
     bool is_buy = convertSideToBool(msg.side);
     uint64_t price = convertPrice(msg.price);
     uint32_t qty = msg.size;
     
-    Order* order = new Order(is_buy, price, qty);
+    Order* order = new Order(is_buy, price, qty, msg.order_id, msg.datetime);
     
     // Add to Liquibook with no conditions
     orderbook_->add(order, book::oc_no_conditions);
@@ -60,10 +68,13 @@ void OrderBookManager::handleAdd(const MBOParsed& msg) {
     // Store in map
     order_map_[msg.order_id] = order;
     
-    std::cout << "ADD: order_id=" << msg.order_id 
-              << " side=" << msg.side 
-              << " price=" << msg.price 
-              << " size=" << msg.size << std::endl;
+    // Store metadata
+    order_metadata_[msg.order_id] = {
+        msg.order_id,
+        msg.datetime,
+        msg.price,
+        msg.size
+    };
     
     // Check if there was a pending cancel
     auto pending = pending_cancels_.find(msg.order_id);
@@ -85,10 +96,9 @@ void OrderBookManager::handleCancel(const MBOParsed& msg) {
     // Cancel in Liquibook
     orderbook_->cancel(order);
     
-    std::cout << "CANCEL: order_id=" << msg.order_id << std::endl;
-    
-    // Remove from map
+    // Remove from maps
     order_map_.erase(msg.order_id);
+    order_metadata_.erase(msg.order_id);
     
     // Clean up memory
     delete order;
@@ -113,13 +123,17 @@ void OrderBookManager::handleModify(const MBOParsed& msg) {
     uint64_t new_price = convertPrice(msg.price);
     uint32_t new_qty = msg.size;
     
-    Order* new_order = new Order(is_buy, new_price, new_qty);
+    Order* new_order = new Order(is_buy, new_price, new_qty, msg.order_id, msg.datetime);
     orderbook_->add(new_order, book::oc_no_conditions);
     order_map_[msg.order_id] = new_order;
     
-    std::cout << "MODIFY: order_id=" << msg.order_id 
-              << " new_price=" << msg.price 
-              << " new_size=" << msg.size << std::endl;
+    // Update metadata
+    order_metadata_[msg.order_id] = {
+        msg.order_id,
+        msg.datetime,
+        msg.price,
+        msg.size
+    };
 }
 
 void OrderBookManager::handleTrade(const MBOParsed& msg) {
@@ -128,10 +142,6 @@ void OrderBookManager::handleTrade(const MBOParsed& msg) {
     if (!order) {
         return;
     }
-    
-    std::cout << "TRADE: order_id=" << msg.order_id 
-              << " qty=" << msg.size 
-              << " price=" << msg.price << std::endl;
 }
 
 Order* OrderBookManager::findOrder(uint64_t order_id) {
@@ -152,7 +162,7 @@ uint64_t OrderBookManager::convertPrice(double price) {
     return static_cast<uint64_t>(price * 100.0);
 }
 
-void OrderBookManager::printBookState() {
+void OrderBookManager::printBookStateJSON() {
     const book::DepthOrderBook<Order*>* depth_book = 
         dynamic_cast<const book::DepthOrderBook<Order*>*>(orderbook_);
     
@@ -160,47 +170,115 @@ void OrderBookManager::printBookState() {
         return;
     }
 
-    std::cout << "\n";
-    std::cout << "╔════════════════════════════════════════╗\n";
-    std::cout << "║         ORDER BOOK (Top 5 Levels)      ║\n";
-    std::cout << "╠═════════════════╦═════════════════════╣\n";
-    std::cout << "║      ASKS       ║       BIDS          ║\n";
-    std::cout << "║   Price   Qty   ║   Price   Qty       ║\n";
-    std::cout << "╠═════════════════╬═════════════════════╣\n";
-
-    const auto& depth = depth_book->depth();
-    const book::DepthLevel* asks = depth.asks();
-    const book::DepthLevel* bids = depth.bids();
-
-    // Print 5 levels or until price is 0 (empty level)
-    for (int i = 0; i < 5; ++i) {
-        std::cout << "║ ";
-        
-        // Print ASK side (reversed, highest price first)
-        const book::DepthLevel& ask = asks[4 - i];
-        if (ask.price() > 0) {
-            std::cout << std::fixed << std::setprecision(2)
-                     << std::setw(7) << (ask.price() / 100.0)
-                     << " " << std::setw(5) << ask.aggregate_qty();
-        } else {
-            std::cout << "             ";
+    std::stringstream json_output;
+    json_output << "{\n";
+    json_output << "  \"symbol\": \"" << current_symbol_ << "\",\n";
+    json_output << "  \"sequence\": " << current_sequence_ << ",\n";
+    json_output << "  \"bids\": [\n";
+    
+    // Collect all buy orders with their full metadata
+    // Structure: price -> vector of (order_id, timestamp, quantity)
+    std::map<double, std::vector<std::tuple<uint64_t, std::string, uint32_t>>, std::greater<double>> buy_by_price;
+    
+    for (const auto& pair : order_map_) {
+        Order* order = pair.second;
+        if (order && order->is_buy()) {
+            double price = order->price() / 100.0;
+            uint64_t order_id = order->get_order_id();
+            const std::string& timestamp = order->get_timestamp();
+            uint32_t qty = order->order_qty();
+            
+            // Validate price
+            if (order->price() > 0 && price < 1000000.0) {
+                buy_by_price[price].push_back({order_id, timestamp, qty});
+            }
         }
-        
-        std::cout << " ║ ";
-        
-        // Print BID side (highest price first)
-        const book::DepthLevel& bid = bids[i];
-        if (bid.price() > 0) {
-            std::cout << std::fixed << std::setprecision(2)
-                     << std::setw(7) << (bid.price() / 100.0)
-                     << " " << std::setw(5) << bid.aggregate_qty();
-        } else {
-            std::cout << "             ";
-        }
-        
-        std::cout << " ║\n";
     }
-
-    std::cout << "╚═════════════════╩═════════════════════╝\n";
-    std::cout << "  Total Orders: " << order_map_.size() << "\n\n";
+    
+    // Print buy orders, grouped by price (descending - highest first)
+    size_t price_idx = 0;
+    for (const auto& price_group : buy_by_price) {
+        double price = price_group.first;
+        const auto& orders_at_price = price_group.second;
+        
+        // Print each individual order at this price level
+        for (size_t order_idx = 0; order_idx < orders_at_price.size(); ++order_idx) {
+            uint64_t order_id = std::get<0>(orders_at_price[order_idx]);
+            const std::string& timestamp = std::get<1>(orders_at_price[order_idx]);
+            uint32_t qty = std::get<2>(orders_at_price[order_idx]);
+            
+            json_output << "    {\n";
+            json_output << "      \"order_id\": " << order_id << ",\n";
+            json_output << "      \"timestamp\": \"" << timestamp << "\",\n";
+            json_output << "      \"price\": " << std::fixed << std::setprecision(2) << price << ",\n";
+            json_output << "      \"quantity\": " << qty << "\n";
+            json_output << "    }";
+            
+            // Add comma if not the last order overall
+            bool is_last_order = (price_idx == buy_by_price.size() - 1) && 
+                                 (order_idx == orders_at_price.size() - 1);
+            if (!is_last_order) {
+                json_output << ",";
+            }
+            json_output << "\n";
+        }
+        price_idx++;
+    }
+    
+    json_output << "  ],\n";
+    json_output << "  \"asks\": [\n";
+    
+    // Collect all sell orders with their full metadata
+    // Structure: price -> vector of (order_id, timestamp, quantity)
+    std::map<double, std::vector<std::tuple<uint64_t, std::string, uint32_t>>, std::less<double>> sell_by_price;
+    
+    for (const auto& pair : order_map_) {
+        Order* order = pair.second;
+        if (order && !order->is_buy()) {
+            double price = order->price() / 100.0;
+            uint64_t order_id = order->get_order_id();
+            const std::string& timestamp = order->get_timestamp();
+            uint32_t qty = order->order_qty();
+            
+            // Validate price
+            if (order->price() > 0 && price < 1000000.0) {
+                sell_by_price[price].push_back({order_id, timestamp, qty});
+            }
+        }
+    }
+    
+    // Print sell orders, grouped by price (ascending - lowest first)
+    price_idx = 0;
+    for (const auto& price_group : sell_by_price) {
+        double price = price_group.first;
+        const auto& orders_at_price = price_group.second;
+        
+        // Print each individual order at this price level
+        for (size_t order_idx = 0; order_idx < orders_at_price.size(); ++order_idx) {
+            uint64_t order_id = std::get<0>(orders_at_price[order_idx]);
+            const std::string& timestamp = std::get<1>(orders_at_price[order_idx]);
+            uint32_t qty = std::get<2>(orders_at_price[order_idx]);
+            
+            json_output << "    {\n";
+            json_output << "      \"order_id\": " << order_id << ",\n";
+            json_output << "      \"timestamp\": \"" << timestamp << "\",\n";
+            json_output << "      \"price\": " << std::fixed << std::setprecision(2) << price << ",\n";
+            json_output << "      \"quantity\": " << qty << "\n";
+            json_output << "    }";
+            
+            // Add comma if not the last order overall
+            bool is_last_order = (price_idx == sell_by_price.size() - 1) && 
+                                 (order_idx == orders_at_price.size() - 1);
+            if (!is_last_order) {
+                json_output << ",";
+            }
+            json_output << "\n";
+        }
+        price_idx++;
+    }
+    
+    json_output << "  ]\n";
+    json_output << "}\n";
+    
+    std::cout << json_output.str();
 }

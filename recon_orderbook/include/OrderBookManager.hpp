@@ -10,6 +10,14 @@
 
 using namespace liquibook;
 
+// Structure to store order metadata
+struct OrderMetadata {
+    uint64_t order_id;
+    std::string timestamp;
+    double price;
+    uint32_t quantity;
+};
+
 class OrderBookManager {
 private:
     // Liquibook orderbook instance
@@ -18,8 +26,15 @@ private:
     // Map external order_id to Liquibook Order pointer
     std::unordered_map<uint64_t, Order*> order_map_;
     
+    // Map to store order metadata (order_id -> metadata)
+    std::unordered_map<uint64_t, OrderMetadata> order_metadata_;
+    
     // Track pending cancels for out-of-order messages
     std::unordered_map<uint64_t, MBOParsed> pending_cancels_;
+    
+    // Track symbol for JSON output
+    std::string current_symbol_;
+    uint32_t current_sequence_;
     
 public:
     OrderBookManager();
@@ -28,8 +43,8 @@ public:
     // Main entry point for processing MBO messages
     void processMessage(const MBOParsed& msg);
     
-    // Print current book state to terminal
-    void printBookState();
+    // Print current book state as JSON to terminal
+    void printBookStateJSON();
     
 private:
     // Action handlers

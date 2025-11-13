@@ -130,13 +130,8 @@ void MBOSubscriber::on_data_available(eprosima::fastdds::dds::DataReader* reader
             // Parse the CSV string back to MBOParsed
             MBOParsed record = parseCSVString(message);
             
-            // Process through OrderBook
+            // Process through OrderBook (prints JSON snapshot)
             orderbook_mgr_->processMessage(record);
-            
-            // Print book state every 100 messages (adjust as needed)
-            if (samples_received % 100 == 0) {
-                orderbook_mgr_->printBookState();
-            }
         }
     }
 }
