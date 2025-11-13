@@ -53,6 +53,7 @@ MBOSubscriber::MBOSubscriber()
       matched_publishers(0), samples_received(0) 
 {
     type.reset(new StringType());
+    orderbook_mgr_ = std::make_unique<OrderBookManager>();
 }
 
 MBOSubscriber::~MBOSubscriber() {
@@ -129,10 +130,13 @@ void MBOSubscriber::on_data_available(eprosima::fastdds::dds::DataReader* reader
             // Parse the CSV string back to MBOParsed
             MBOParsed record = parseCSVString(message);
             
-            // Print the record
-            printRecord(record);
+            // Process through OrderBook
+            orderbook_mgr_->processMessage(record);
             
-            std::cout << "[Sample #" << samples_received << "]" << std::endl;
+            // Print book state every 100 messages (adjust as needed)
+            if (samples_received % 100 == 0) {
+                orderbook_mgr_->printBookState();
+            }
         }
     }
 }

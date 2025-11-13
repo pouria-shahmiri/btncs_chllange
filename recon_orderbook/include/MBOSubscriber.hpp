@@ -8,6 +8,7 @@
 #include <fastdds/dds/core/status/SubscriptionMatchedStatus.hpp>
 #include <memory>
 #include "MBOParsed.hpp"
+#include "OrderBookManager.hpp"
 
 class MBOSubscriber : public eprosima::fastdds::dds::DataReaderListener {
 private:
@@ -19,6 +20,9 @@ private:
     
     int matched_publishers;
     int samples_received;
+    
+    // OrderBook manager
+    std::unique_ptr<OrderBookManager> orderbook_mgr_;
 
 public:
     MBOSubscriber();
