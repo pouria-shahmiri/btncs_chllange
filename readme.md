@@ -86,3 +86,4 @@ My testing mindset goes beyond simple unit tests. For a system like this, the tw
 The goal isn't just a working solution; it's a **production-ready, ultra-fast, and risk-managed infrastructure component.** That's the real challenge.
 
 
+also my approach to use AI : i hate vibecoding and i get the whole context of the project with directories and files relation and i give that to AI and get what i want as a change.
